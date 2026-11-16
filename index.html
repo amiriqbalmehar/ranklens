@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RankLens — Hybrid AI SEO Audit Assistant</title>
+  <meta name="description" content="RankLens audits a web page's on-page SEO instantly, then explains the findings with hybrid AI: Gemini Nano on-device when available, cloud Gemini when it is not.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔍</text></svg>">
+  <link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">🔍</span>
+        <div>
+          <h1>RankLens</h1>
+          <p class="tagline">Hybrid AI SEO audit assistant</p>
+        </div>
+      </div>
+      <div class="header-status">
+        <span id="firebase-status" class="pill pill-muted">Checking Firebase…</span>
+        <span id="device-status" class="pill pill-muted">On-device model: not started</span>
+      </div>
+    </div>
+  </header>
+
+  <div id="setup-banner" class="setup-banner" hidden>
+    <strong>AI is not configured yet.</strong>
+    The SEO audit below works fully without any setup. To enable the AI assistant,
+    add your Firebase config — see <code>firebase-setup.md</code> (5 steps, about 10 minutes).
+  </div>
+
+  <main class="layout">
+    <!-- LEFT: input + audit results -->
+    <section class="panel" aria-label="Page audit">
+      <h2>1 · Paste a page</h2>
+      <p class="hint">Paste the page's HTML (View Source → copy) for the full audit, or plain text for the content checks. Nothing is uploaded — the audit runs entirely in your browser.</p>
+
+      <div class="field-row">
+        <label class="field">
+          <span>Page URL <span class="optional">(optional, display only)</span></span>
+          <input id="page-url" type="url" placeholder="https://example.com/services" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>Target keyword <span class="optional">(optional)</span></span>
+          <input id="target-keyword" type="text" placeholder="e.g. emergency plumber Austin" autocomplete="off">
+        </label>
+      </div>
+
+      <label class="field">
+        <span>Page HTML or text</span>
+        <textarea id="page-input" rows="10" spellcheck="false" placeholder="Paste the page HTML or text here…"></textarea>
+      </label>
+
+      <div class="button-row">
+        <button id="run-audit" class="btn btn-primary" type="button">Run audit</button>
+        <button id="load-sample" class="btn" type="button">Load sample page</button>
+        <label class="btn btn-file" for="file-input">Upload file</label>
+        <input id="file-input" type="file" accept=".html,.htm,.txt,.md" hidden>
+        <button id="clear-input" class="btn btn-ghost" type="button">Clear</button>
+      </div>
+
+      <div id="results" class="results" hidden>
+        <h2>2 · Audit results</h2>
+        <div class="score-card">
+          <svg class="score-ring" viewBox="0 0 120 120" role="img" aria-label="SEO score">
+            <circle class="ring-bg" cx="60" cy="60" r="52"></circle>
+            <circle id="score-ring-fill" class="ring-fill" cx="60" cy="60" r="52"></circle>
+            <text id="score-value" class="ring-text" x="60" y="58" text-anchor="middle">–</text>
+            <text class="ring-sub" x="60" y="78" text-anchor="middle">/ 100</text>
+          </svg>
+          <div class="score-meta">
+            <p id="score-grade" class="grade">–</p>
+            <p id="score-summary" class="muted">–</p>
+            <p id="score-words" class="muted">–</p>
+          </div>
+        </div>
+
+        <ul id="checks-list" class="checks"></ul>
+
+        <div class="button-row">
+          <button id="export-md" class="btn" type="button">Copy report (Markdown)</button>
+          <button id="export-json" class="btn" type="button">Download report (JSON)</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT: AI assistant -->
+    <section class="panel" aria-label="AI assistant">
+      <h2>3 · AI assistant <span class="badge-hybrid">Hybrid inference</span></h2>
+      <p class="hint">Runs on-device with Gemini Nano when your browser has it, and falls back to cloud Gemini when it doesn't. Every answer is labelled with where it ran.</p>
+
+      <fieldset class="mode-picker">
+        <legend>Inference mode</legend>
+        <label><input type="radio" name="inference-mode" value="PREFER_ON_DEVICE" checked> Prefer on-device <span class="muted">(fall back to cloud)</span></label>
+        <label><input type="radio" name="inference-mode" value="ONLY_ON_DEVICE"> On-device only</label>
+        <label><input type="radio" name="inference-mode" value="PREFER_IN_CLOUD"> Prefer cloud <span class="muted">(fall back to on-device)</span></label>
+        <label><input type="radio" name="inference-mode" value="ONLY_IN_CLOUD"> Cloud only</label>
+      </fieldset>
+
+      <div id="download-wrap" class="download-wrap" hidden>
+        <label for="download-bar">Downloading on-device model…</label>
+        <progress id="download-bar" max="100" value="0"></progress>
+        <span id="download-pct" class="muted">0%</span>
+      </div>
+
+      <div class="button-row ai-tasks">
+        <button id="ai-summarize" class="btn" type="button">Summarize this page</button>
+        <button id="ai-brief" class="btn" type="button">Content brief</button>
+      </div>
+
+      <label class="field">
+        <span>Rewrite a section <span class="optional">(paste the section, then Rewrite)</span></span>
+        <textarea id="rewrite-input" rows="4" spellcheck="false" placeholder="Paste a paragraph or section to rewrite…"></textarea>
+      </label>
+      <div class="button-row">
+        <button id="ai-rewrite" class="btn" type="button">Rewrite section</button>
+      </div>
+
+      <div id="ai-output" class="ai-output" aria-live="polite">
+        <p class="muted">Run an audit first, then ask the assistant. Short tasks (summaries, explanations) run on-device when Gemini Nano is available; longer briefs usually fall back to the cloud.</p>
+      </div>
+
+      <h3 class="history-title">Recent audits</h3>
+      <ul id="history-list" class="history">
+        <li class="muted">No audits yet — they appear here after you run one.</li>
+      </ul>
+      <button id="clear-history" class="btn btn-ghost btn-small" type="button">Clear history</button>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>RankLens · Built for <strong>#BuildHybridAI 2026</strong> with Firebase AI Logic hybrid inference (Gemini Nano on-device + cloud Gemini). On-page checks run locally; AI needs a Firebase project — see <code>firebase-setup.md</code>. Open source (MIT).</p>
+  </footer>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
